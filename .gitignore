@@ -1,0 +1,19 @@
+# ESP-IDF
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+
+# editor / tools (VS Code settings hold local paths and the serial port)
+.vscode/
+.cache/
+.DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# per-user visualizer settings (defaults live in tactile_viz.py)
+visualizer/viz_config.json
