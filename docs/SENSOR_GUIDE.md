@@ -51,9 +51,14 @@ The ESP32-S3 board has two USB ports (USB and COM). Use the **COM port** (USB-UA
 
 ## 2. 触点编号 / Taxel layout
 
-红色编号 1–16 对应 MUX1 的 CH0–CH15，17–32 对应 MUX2 的 CH0–CH15（编号 n → MUX1 CH(n−1)；编号 n ≥ 17 → MUX2 CH(n−17)）。注意从下往上第二行从**右往左**依次是 7–12。U3 周围的 15、16、17、18 用于 MLX90393 的自动归零。
+两个版本的电路连接完全相同：红色编号 1–16 对应 MUX1 的 CH0–CH15，17–32 对应 MUX2 的 CH0–CH15（编号 n → MUX1 CH(n−1)；编号 n ≥ 17 → MUX2 CH(n−17)）。区别只是触点的排布。
 
-Red labels 1–16 are MUX1 CH0–CH15 and 17–32 are MUX2 CH0–CH15 (label n → MUX1 CH(n−1); label n ≥ 17 → MUX2 CH(n−17)). Note that the second row from the bottom runs **right to left**: 7–12. Taxels 15, 16, 17 and 18 around U3 gate the MLX90393 auto-zero.
+Both versions share the same wiring: red labels 1–16 are MUX1 CH0–CH15 and 17–32 are MUX2 CH0–CH15 (label n → MUX1 CH(n−1); label n ≥ 17 → MUX2 CH(n−17)). Only the taxel arrangement differs.
+
+### 2.1 带 MLX90393（32 点）/ With MLX90393 (32 taxels)
+
+注意从下往上第二行从**右往左**依次是 7–12。U3 周围的 15、16、17、18 用于 MLX90393 的自动归零。
+Note that the second row from the bottom runs **right to left**: 7–12. Taxels 15, 16, 17 and 18 around U3 gate the MLX90393 auto-zero.
 
 <img src="images/taxel_layout.jpg" width="560">
 
@@ -63,6 +68,21 @@ Red labels 1–16 are MUX1 CH0–CH15 and 17–32 are MUX2 CH0–CH15 (label n �
         15      17
  13  14     U3      19  20
         16      18
+ 12  11  10   9   8   7
+  1   2   3   4   5   6
+```
+
+### 2.2 不带 MLX90393（30 点）/ Without MLX90393 (30 taxels)
+
+6 × 5 排布，去掉了 **15 和 17** 两个触点，因此 **MUX1 CH14 和 MUX2 CH0 没有接触点**（可视化的数据文本里显示为 `--`）。
+A 6 × 5 grid with taxels **15 and 17 removed**, so **MUX1 CH14 and MUX2 CH0 have no taxel** (shown as `--` in the visualizer's data text).
+
+<img src="images/taxel_layout_no_mlx.jpg" width="520">
+
+```
+ 27  28  29  30  31  32
+ 26  25  24  23  22  21
+ 13  14  16  18  19  20
  12  11  10   9   8   7
   1   2   3   4   5   6
 ```

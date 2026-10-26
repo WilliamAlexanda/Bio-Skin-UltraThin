@@ -73,6 +73,59 @@ def adc_index(label):
     return m * 16 + c
 
 
+INDEX_LABEL = {adc_index(lab): lab for lab in CHANNEL_MAP}
+
+
+class Layout:
+    """One sensor version: board outline, taxel positions and (optionally) U3."""
+
+    def __init__(self, title, size, taxels, chip=None, holes=(), notch=None, slot=None, gate_rect=None):
+        self.title = title
+        self.w, self.h = size
+        self.taxels = taxels
+        self.chip = chip                # U3 centre, None = no MLX90393 on this board
+        self.holes = holes
+        self.notch = notch
+        self.slot = slot
+        self.gate_rect = gate_rect
+        self.unused = set(CHANNEL_MAP) - set(taxels)    # labels without a taxel on this board
+        self._path = None
+
+    def board_path(self):
+        if self._path is None:
+            path = QtGui.QPainterPath()
+            path.addRoundedRect(QRectF(0, 0, self.w, self.h), 22, 22)
+            cut = QtGui.QPainterPath()
+            for x, y, r in self.holes:
+                cut.addEllipse(QPointF(x, y), r, r)
+            if self.notch:
+                cut.addPolygon(QtGui.QPolygonF([QPointF(*pt) for pt in self.notch]))
+                cut.closeSubpath()
+            if self.slot:
+                cut.addRoundedRect(QRectF(*self.slot), 6, 6)
+            self._path = path.subtracted(cut)
+        return self._path
+
+
+LAYOUT_MLX = Layout("带 MLX90393 · 32 点", (BOARD_W, BOARD_H), TAXELS, chip=CHIP_CENTER,
+                    holes=HOLES, notch=NOTCH, slot=SLOT, gate_rect=(425, 468, 582, 355))
+
+# Version without MLX90393: 6 x 5 grid, taxels 15 and 17 removed (MUX1 CH14 and
+# MUX2 CH0 stay unused), same wiring otherwise.
+PLAIN_COLS = [85, 277, 469, 661, 853, 1045]
+PLAIN_ROWS = [
+    (75, (27, 28, 29, 30, 31, 32)),
+    (278, (26, 25, 24, 23, 22, 21)),
+    (498, (13, 14, 16, 18, 19, 20)),
+    (747, (12, 11, 10, 9, 8, 7)),
+    (982, (1, 2, 3, 4, 5, 6)),
+]
+TAXELS_PLAIN = {lab: (PLAIN_COLS[i], y) for y, labs in PLAIN_ROWS for i, lab in enumerate(labs)}
+LAYOUT_PLAIN = Layout("无 MLX90393 · 30 点", (1130, 1072), TAXELS_PLAIN)
+
+LAYOUT_SWITCH_S = 1.0   # MLX missing this long -> switch to the layout without MLX90393
+
+
 # light yellow -> green -> orange -> red, by pressure 0..1
 COLOR_STOPS = [(0.00, (255, 241, 186)),
                (0.35, (92, 206, 108)),
@@ -403,24 +456,12 @@ class PcbView(QtWidgets.QWidget):
         self.hover = None
         self.setMouseTracking(True)
         self.setMinimumSize(400, 330)
-        self._board_path = self._make_board_path()
-
-    @staticmethod
-    def _make_board_path():
-        path = QtGui.QPainterPath()
-        path.addRoundedRect(QRectF(0, 0, BOARD_W, BOARD_H), 22, 22)
-        cut = QtGui.QPainterPath()
-        for x, y, r in HOLES:
-            cut.addEllipse(QPointF(x, y), r, r)
-        cut.addPolygon(QtGui.QPolygonF([QPointF(*pt) for pt in NOTCH]))
-        cut.closeSubpath()
-        cut.addRoundedRect(QRectF(*SLOT), 6, 6)
-        return path.subtracted(cut)
 
     def _geometry(self):
+        L = self.win.layout
         m = 28
-        s = min((self.width() - 2 * m) / BOARD_W, (self.height() - 2 * m) / BOARD_H)
-        return s, (self.width() - BOARD_W * s) / 2, (self.height() - BOARD_H * s) / 2
+        s = min((self.width() - 2 * m) / L.w, (self.height() - 2 * m) / L.h)
+        return s, (self.width() - L.w * s) / 2, (self.height() - L.h * s) / 2
 
     def paintEvent(self, _):
         win = self.win
@@ -431,28 +472,38 @@ class PcbView(QtWidgets.QWidget):
         bg.setColorAt(1, QtGui.QColor("#0b0f17"))
         p.fillRect(self.rect(), bg)
 
+        L = win.layout
+        board = L.board_path()
         s, ox, oy = self._geometry()
         p.translate(ox, oy)
         p.scale(s, s)
 
         # board: shadow, body, edge, pour border
         for i in range(6, 0, -1):
-            p.fillPath(self._board_path.translated(6 + i * 3, 10 + i * 3), QtGui.QColor(0, 0, 0, 22))
-        body = QtGui.QLinearGradient(0, 0, BOARD_W, BOARD_H)
+            p.fillPath(board.translated(6 + i * 3, 10 + i * 3), QtGui.QColor(0, 0, 0, 22))
+        body = QtGui.QLinearGradient(0, 0, L.w, L.h)
         body.setColorAt(0, QtGui.QColor("#2d66cf"))
         body.setColorAt(1, QtGui.QColor("#1c4597"))
-        p.fillPath(self._board_path, body)
+        p.fillPath(board, body)
         p.setPen(QtGui.QPen(QtGui.QColor("#10306b"), 6))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawPath(self._board_path)
+        p.drawPath(board)
         p.setPen(QtGui.QPen(QtGui.QColor(120, 170, 255, 45), 3))
-        p.drawRoundedRect(QRectF(16, 16, BOARD_W - 32, BOARD_H - 32), 14, 14)
+        p.drawRoundedRect(QRectF(16, 16, L.w - 32, L.h - 32), 14, 14)
         p.setPen(QtGui.QPen(QtGui.QColor("#0d2350"), 10))
-        for x, y, r in HOLES:
+        for x, y, r in L.holes:
             p.drawEllipse(QPointF(x, y), r + 5, r + 5)
+        if L.chip:
+            self._paint_chip(p, L)
+        self._paint_taxels(p, L)
+        if L.chip:
+            self._paint_arrow(p, L)
+        p.end()
 
+    def _paint_chip(self, p, L):
+        win = self.win
         # zero gate area around U3
-        gate_rect = QRectF(520 - 95, 530 - 62, 912 - 520 + 190, 735 - 530 + 150)
+        gate_rect = QRectF(*L.gate_rect)
         if win.mlx is None:
             gate_col = QtGui.QColor(255, 255, 255, 55)
         elif win.est.zeroed:
@@ -464,7 +515,7 @@ class PcbView(QtWidgets.QWidget):
         p.drawRoundedRect(gate_rect, 30, 30)
 
         # chip
-        cx, cy = CHIP_CENTER
+        cx, cy = L.chip
         half = CHIP_SIZE / 2
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QtGui.QColor("#d4b56a"))
@@ -500,21 +551,27 @@ class PcbView(QtWidgets.QWidget):
             p.setPen(QtGui.QColor(255, 200, 210, 200))
             p.drawText(QRectF(cx - 150, cy + 4, 300, 30), Qt.AlignmentFlag.AlignCenter, "shear not available")
 
-        # taxels
-        cfg = win.cfg
-        span = max(1, cfg["noload_adc"] - cfg["full_adc"])
+    @staticmethod
+    def _fonts():
         value_font = QtGui.QFont()
         value_font.setPixelSize(24)
         value_font.setWeight(QtGui.QFont.Weight.DemiBold)
         label_font = QtGui.QFont()
         label_font.setPixelSize(30)
         label_font.setWeight(QtGui.QFont.Weight.Bold)
+        return value_font, label_font
+
+    def _paint_taxels(self, p, L):
+        win = self.win
+        cfg = win.cfg
+        span = max(1, cfg["noload_adc"] - cfg["full_adc"])
+        value_font, label_font = self._fonts()
         levels = {}
-        for lab in TAXELS:
+        for lab in L.taxels:
             v = win.adc[adc_index(lab)]
             levels[lab] = (v, (cfg["noload_adc"] - v) / span)
         p.setPen(Qt.PenStyle.NoPen)
-        for lab, (x, y) in TAXELS.items():     # glows first so they never cover a pad
+        for lab, (x, y) in L.taxels.items():   # glows first so they never cover a pad
             pr = min(levels[lab][1], 1.0)
             if pr > 0.02:
                 r = 70 + 110 * pr
@@ -526,7 +583,7 @@ class PcbView(QtWidgets.QWidget):
                 glow.setColorAt(1, g)
                 p.setBrush(glow)
                 p.drawEllipse(QPointF(x, y), r, r)
-        for lab, (x, y) in TAXELS.items():
+        for lab, (x, y) in L.taxels.items():
             v, pr = levels[lab]
             col = pressure_color(pr)
             rect = QRectF(x - PAD_W / 2, y - PAD_H / 2, PAD_W, PAD_H)
@@ -547,7 +604,11 @@ class PcbView(QtWidgets.QWidget):
             p.setPen(QtGui.QColor(255, 255, 255, 215))
             p.drawText(QRectF(x - 70, y + PAD_H / 2 + 2, 140, 40), Qt.AlignmentFlag.AlignCenter, str(lab))
 
-        # shear arrow from U3
+    def _paint_arrow(self, p, L):
+        """Shear arrow from U3."""
+        win, cfg = self.win, self.win.cfg
+        cx, cy = L.chip
+        value_font, _ = self._fonts()
         sx, sy = to_screen(*win.est.smooth, cfg)
         mag = math.hypot(sx, sy)
         if win.mlx is not None and mag > cfg["deadband_ut"]:
@@ -562,13 +623,13 @@ class PcbView(QtWidgets.QWidget):
             p.setPen(QtGui.QPen(QtGui.QColor(33, 230, 255, 200), 4))
             p.setBrush(QtGui.QColor(33, 230, 255, 70))
             p.drawEllipse(QPointF(cx, cy), 14, 14)
-        p.end()
 
     def mouseMoveEvent(self, e):
         s, ox, oy = self._geometry()
         bx, by = (e.position().x() - ox) / s, (e.position().y() - oy) / s
         hit = None
-        for lab, (x, y) in TAXELS.items():
+        L = self.win.layout
+        for lab, (x, y) in L.taxels.items():
             if abs(bx - x) <= PAD_W / 2 + 10 and abs(by - y) <= PAD_H / 2 + 10:
                 hit = lab
         self.hover = hit
@@ -577,7 +638,7 @@ class PcbView(QtWidgets.QWidget):
         else:
             m, c = CHANNEL_MAP[hit]
             v = self.win.adc[adc_index(hit)]
-            tag = "（MLX 归零门控）" if hit in ZERO_GATE_LABELS else ""
+            tag = "（MLX 归零门控）" if L.chip and hit in ZERO_GATE_LABELS else ""
             QtWidgets.QToolTip.showText(e.globalPosition().toPoint(),
                                         f"触点 {hit}{tag}\nMUX{m + 1} CH{c}\nADC {v}", self)
         self.update()
@@ -947,6 +1008,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.est = ShearEstimator()
         self.frame_times = deque(maxlen=300)
         self.cal_dialog = None
+        self.layout = LAYOUT_MLX
+        self._na_since = None       # first frame of the current run without MLX data
 
         self.pcb = PcbView(self)
         self.data_text = self._build_data_text()
@@ -1084,6 +1147,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.data_text.setVisible(on)
         self.set_cfg("show_text", on)
 
+    def _adc_cell(self, i):
+        """6-char ADC column; '--' for channels without a taxel on the current board."""
+        return f"{'--':>6}" if INDEX_LABEL[i] in self.layout.unused else f"{self.adc[i]:>6}"
+
     def _format_data_text(self):
         def num(v, fmt):
             return format(v, fmt) if v is not None else format("N.A.", ">" + fmt.lstrip("+").split(".")[0])
@@ -1097,8 +1164,8 @@ class MainWindow(QtWidgets.QMainWindow):
             f"     T:{num(t, '6.1f')} C",
             f"  vs zero   dX:{num(dx, '+9.1f')} dY:{num(dy, '+9.1f')} dZ:{num(dz, '+9.1f')} uT",
             "CH          " + "".join(f"{c:>6}" for c in range(16)),
-            "MUX1 ( 1-16)" + "".join(f"{v:>6}" for v in self.adc[:16]),
-            "MUX2 (17-32)" + "".join(f"{v:>6}" for v in self.adc[16:]),
+            "MUX1 ( 1-16)" + "".join(self._adc_cell(i) for i in range(16)),
+            "MUX2 (17-32)" + "".join(self._adc_cell(i) for i in range(16, 32)),
         ]
         return "\n".join(lines)
 
@@ -1134,6 +1201,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.frame_times.clear()
         self.est = ShearEstimator()
         self.mlx = None
+        self._na_since = None
         sink = self.frames.append
         self.source = DemoSource(sink) if port == DEMO_PORT else SerialSource(port, sink)
         self.source.start()
@@ -1144,6 +1212,22 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def manual_zero(self):
         self.est.manual_zero(self.mlx)
+
+    def _pick_layout(self, t, mlx):
+        """MLX data -> board with MLX90393 at once; no MLX data for LAYOUT_SWITCH_S ->
+        board without it (the firmware retries detection every second)."""
+        if mlx is not None:
+            self._na_since = None
+            new = LAYOUT_MLX
+        else:
+            if self._na_since is None:
+                self._na_since = t
+            if t - self._na_since < LAYOUT_SWITCH_S:
+                return
+            new = LAYOUT_PLAIN
+        if new is not self.layout:
+            self.layout = new
+            self.pcb.hover = None
 
     def open_calibration(self):
         if self.cal_dialog is None:
@@ -1162,6 +1246,7 @@ class MainWindow(QtWidgets.QMainWindow):
             released = all(adc[i] >= self.cfg["noload_adc"] for i in gate)
             self.est.update(t, mlx, released)
             self.frame_times.append(t)
+            self._pick_layout(t, mlx)
             if self.cal_dialog is not None:
                 self.cal_dialog.feed(mlx)
         self._update_status()
@@ -1191,7 +1276,8 @@ class MainWindow(QtWidgets.QMainWindow):
             mode = "文本模式（固件未更新？）"
         else:
             mode = "等待数据…"
-        self.conn_label.setText(f"{mode} · {rate} 帧/秒 · 丢包 {src.lost} · 校验错 {src.bad}")
+        self.conn_label.setText(f"{mode} · {rate} 帧/秒 · 丢包 {src.lost} · 校验错 {src.bad}\n"
+                                f"布局：{self.layout.title}（自动识别）")
 
         if self.mlx is None:
             self.mag_label.setText("N.A.")

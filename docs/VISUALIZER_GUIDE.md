@@ -35,7 +35,13 @@ python -m venv .venv
 > 串口一次只能被一个程序打开：使用可视化程序前，先关闭 VS Code / `idf.py monitor` 的串口监视器。
 > A serial port can only be opened by one program at a time: close the VS Code / `idf.py monitor` serial monitor first.
 
-## 2. 连接 / Connecting
+## 2. 自动识别传感器版本 / Automatic sensor version
+
+程序根据有没有 MLX90393 数据自动切换 PCB 布局，不需要任何设置：收到有效的 MLX 数据，立即显示**带 MLX90393 的 32 点布局**（带 U3 和剪切力箭头）；连续 1 秒没有 MLX 数据，切换为**不带 MLX90393 的 30 点布局**（6 × 5，无 15、17 号触点，数据文本中 MUX1 CH14 和 MUX2 CH0 显示 `--`）。当前布局显示在串口状态行。布局定义见 `tactile_viz.py` 中的 `LAYOUT_MLX` 和 `LAYOUT_PLAIN`。
+
+The PCB drawing follows the sensor version automatically, nothing to configure: valid MLX data switches immediately to the **32-taxel layout with MLX90393** (U3 and shear arrow); 1 s without MLX data switches to the **30-taxel layout without MLX90393** (6 × 5, taxels 15 and 17 removed; MUX1 CH14 and MUX2 CH0 show `--` in the data text). The active layout is shown in the serial status line. The layouts are `LAYOUT_MLX` and `LAYOUT_PLAIN` in `tactile_viz.py`.
+
+## 2.1 连接 / Connecting
 
 在右上角选择串口（`usbserial` / `usbmodem` 设备排在最前），点 **连接**。程序向固件发送 `b`，固件开始以 100 Hz 发送二进制数据包；断开时程序发送 `t`，固件恢复文本输出。状态行显示：
 
@@ -121,9 +127,9 @@ Settings are saved to `visualizer/viz_config.json` (not tracked by git); delete 
 
 ## 7. 修改映射 / Changing the channel map
 
-触点位置和通道对应关系都在 `tactile_viz.py` 开头：`TAXELS`（编号 → PCB 坐标）、`CHANNEL_MAP`（编号 → MUX 与通道）、`ZERO_GATE_LABELS`（自动归零用的触点）。
+触点位置和通道对应关系都在 `tactile_viz.py` 开头：`TAXELS` / `TAXELS_PLAIN`（编号 → PCB 坐标，分别对应两个版本）、`CHANNEL_MAP`（编号 → MUX 与通道）、`ZERO_GATE_LABELS`（自动归零用的触点）。
 
-Taxel positions and the channel map are defined at the top of `tactile_viz.py`: `TAXELS` (label → PCB position), `CHANNEL_MAP` (label → MUX and channel) and `ZERO_GATE_LABELS` (taxels used for the auto zero).
+Taxel positions and the channel map are defined at the top of `tactile_viz.py`: `TAXELS` / `TAXELS_PLAIN` (label → PCB position for the two versions), `CHANNEL_MAP` (label → MUX and channel) and `ZERO_GATE_LABELS` (taxels used for the auto zero).
 
 ## 8. 常见问题 / Troubleshooting
 
